@@ -1,0 +1,26 @@
+####
+# Template of input files for Monte Carlo simulation (mcml).
+# Anything in a line after "#" is ignored as comments.
+# Space lines are also ignored.
+# Lengths are in cm, mua and mus are in 1/cm.
+####
+
+1.0						# file version
+1						# number of runs
+
+### Specify data for run 1
+wcy_lo.mco	A				# output filename, ASCII/Binary
+10240000					# No. of photons
+0.01	0.02					# dz, dr
+200	500	100				# No. of dz, dr & da.
+
+5						# No. of layers
+# n	mua	mus	g	d		# One line for each layer
+1.0						# n for medium above.
+1.5	4.3	107	0.79	0.01		# layer 1
+1.4	2.7	187	0.82	0.02		# layer 2
+1.4	3.3	192	0.82	0.02		# layer 3
+1.4	2.7	187	0.82	0.09		# layer 4
+1.4	2.4	194	0.82	0.06		# layer 5
+1.0						# n for medium below.
+
