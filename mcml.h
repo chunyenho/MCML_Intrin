@@ -85,15 +85,15 @@
  *	Structure used to describe a photon packet.
  ****/
 typedef struct {
-    double x, y ,z;	/* Cartesian coordinates.[cm] */
-    double ux, uy, uz;/* directional cosines of a photon. */
-    double w;			/* weight. */
-    Boolean dead;		/* 1 if photon is terminated. */
-    short layer;		/* index to layer where the photon */
+    double x[8], y[8] ,z[8];	/* Cartesian coordinates.[cm] */
+    double ux[8], uy[8], uz[8];/* directional cosines of a photon. */
+    double w[8];			/* weight. */
+    Boolean dead[8];		/* 1 if photon is terminated. */
+    short layer[8];		/* index to layer where the photon */
     /* packet resides. */
-    double s;			/* current step size. [cm]. */
-    double sleft;		/* step size left. dimensionless [-]. */
-} PhotonStruct;
+    double s[8];			/* current step size. [cm]. */
+    double sleft[8];		/* step size left. dimensionless [-]. */
+} Photon8Struct;
 
 /****
  *	Structure used to describe the geometry and optical

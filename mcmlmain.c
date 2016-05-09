@@ -37,8 +37,8 @@ void CheckParm(FILE* , InputStruct * );
 void InitOutputData(InputStruct, OutStruct *);
 void FreeData(InputStruct, OutStruct *);
 double Rspecular(LayerStruct * );
-void LaunchPhoton(double, LayerStruct *, PhotonStruct *);
-void HopDropSpin(InputStruct  *,PhotonStruct *,OutStruct *, VSLStreamStatePtr *, double *,short *);
+void Launch8Photon(double, LayerStruct *, Photon8Struct *);
+void HopDropSpin(InputStruct  *,Photon8Struct *,OutStruct *, VSLStreamStatePtr *, double *,short *, int);
 void SumScaleResult(InputStruct, OutStruct *);
 void WriteResult(InputStruct, OutStruct, char *);
 void CollectResult(InputStruct , OutStruct *, OutStruct *);
@@ -166,7 +166,7 @@ void DoOneRun(short NumRuns, InputStruct *In_Ptr, int num_threads)
     OutStruct * out_parm;		/* distribution of photons.*/
     out_parm = (OutStruct *)malloc(sizeof(OutStruct) * num_threads);
 
-    PhotonStruct photon;
+    Photon8Struct photon;
     long num_photons = In_Ptr->num_photons, photon_rep=10;
 
 #if THINKCPROFILER
@@ -196,16 +196,15 @@ void DoOneRun(short NumRuns, InputStruct *In_Ptr, int num_threads)
 	double result[1024];
 	short count = 0;
 	vslNewStream( &stream, VSL_BRNG_MT19937, rand_seed[tid] );
-        #pragma omp for schedule(dynamic,50)
-        for (i = 0 ; i < num_photons ; i++ ) {
-            if(num_photons - i_photon == photon_rep) {
-                printf("%ld photons & %hd runs left, ", i_photon, NumRuns);
-                PredictDoneTime(num_photons - i_photon, num_photons);
-                photon_rep *= 10;
+        #pragma omp for schedule(dynamic,10)
+        for (i = 0 ; i < num_photons/8 ; i++ ) {
+            Launch8Photon(out_parm[tid].Rsp, In_Ptr->layerspecs, &photon);
+            for (j=0 ; j<8 ; j++)
+            {
+                int vec_num = j;
+                do  HopDropSpin(In_Ptr, &photon, &out_parm[tid], stream, &result, &count, vec_num);
+                while (!photon.dead[vec_num]);
             }
-            LaunchPhoton(out_parm[tid].Rsp, In_Ptr->layerspecs, &photon);
-            do  HopDropSpin(In_Ptr, &photon, &out_parm[tid], stream, &result, &count);
-            while (!photon.dead);
         }
 	vslDeleteStream( &stream );
     }

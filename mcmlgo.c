@@ -94,27 +94,32 @@ double Rspecular(LayerStruct * Layerspecs_Ptr)
 /***********************************************************
  *	Initialize a photon packet.
  ****/
-void LaunchPhoton(double Rspecular,
+void Launch8Photon(double Rspecular,
                   LayerStruct  * Layerspecs_Ptr,
-                  PhotonStruct * Photon_Ptr)
+                  Photon8Struct * Photon_Ptr)
 {
-    Photon_Ptr->w	 	= 1.0 - Rspecular;
-    Photon_Ptr->dead 	= 0;
-    Photon_Ptr->layer = 1;
-    Photon_Ptr->s	= 0;
-    Photon_Ptr->sleft= 0;
+    int i;
+#pragma simd 
+    for(i = 0; i<8 ; i++)
+    {
+        Photon_Ptr->w[i]	 	= 1.0 - Rspecular;
+        Photon_Ptr->dead[i] 	= 0;
+        Photon_Ptr->layer[i] = 1;
+        Photon_Ptr->s[i]	= 0;
+        Photon_Ptr->sleft[i]= 0;
 
-    Photon_Ptr->x 	= 0.0;
-    Photon_Ptr->y	 	= 0.0;
-    Photon_Ptr->z	 	= 0.0;
-    Photon_Ptr->ux	= 0.0;
-    Photon_Ptr->uy	= 0.0;
-    Photon_Ptr->uz	= 1.0;
+        Photon_Ptr->x[i] 	= 0.0;
+        Photon_Ptr->y[i]	 	= 0.0;
+        Photon_Ptr->z[i]	 	= 0.0;
+        Photon_Ptr->ux[i]	= 0.0;
+        Photon_Ptr->uy[i]	= 0.0;
+        Photon_Ptr->uz[i]	= 1.0;
 
-    if((Layerspecs_Ptr[1].mua == 0.0)
-            && (Layerspecs_Ptr[1].mus == 0.0))  { /* glass layer. */
-        Photon_Ptr->layer 	= 2;
-        Photon_Ptr->z	= Layerspecs_Ptr[2].z0;
+        if((Layerspecs_Ptr[1].mua == 0.0)
+                && (Layerspecs_Ptr[1].mus == 0.0))  { /* glass layer. */
+            Photon_Ptr->layer[i] 	= 2;
+            Photon_Ptr->z[i]	= Layerspecs_Ptr[2].z0;
+        }
     }
 }
 
@@ -166,16 +171,16 @@ double SpinTheta(double g, VSLStreamStatePtr stream ,double  *  result,
  *  	for pi-2pi sin(psi) is -
  ****/
 void Spin(double g,
-          PhotonStruct * Photon_Ptr,
-	  VSLStreamStatePtr  stream, double * result, short * count)
+          Photon8Struct * Photon_Ptr,
+	  VSLStreamStatePtr  stream, double * result, short * count, int vec_num)
 {
     double cost, sint;	/* cosine and sine of the */
     /* polar deflection angle theta. */
     double cosp, sinp;	/* cosine and sine of the */
     /* azimuthal angle psi. */
-    double ux = Photon_Ptr->ux;
-    double uy = Photon_Ptr->uy;
-    double uz = Photon_Ptr->uz;
+    double ux = Photon_Ptr->ux[vec_num];
+    double uy = Photon_Ptr->uy[vec_num];
+    double uz = Photon_Ptr->uz[vec_num];
     double psi;
 
     cost = SpinTheta(g, stream, result, count);
@@ -193,30 +198,30 @@ void Spin(double g,
         sinp = - sqrt(1.0 - cosp*cosp);
 
     if(fabs(uz) > COSZERO)  { 	/* normal incident. */
-        Photon_Ptr->ux = sint*cosp;
-        Photon_Ptr->uy = sint*sinp;
-        Photon_Ptr->uz = cost*SIGN(uz);
+        Photon_Ptr->ux[vec_num] = sint*cosp;
+        Photon_Ptr->uy[vec_num] = sint*sinp;
+        Photon_Ptr->uz[vec_num] = cost*SIGN(uz);
         /* SIGN() is faster than division. */
     } else  {		/* regular incident. */
         double temp = sqrt(1.0 - uz*uz);
-        Photon_Ptr->ux = sint*(ux*uz*cosp - uy*sinp)
+        Photon_Ptr->ux[vec_num] = sint*(ux*uz*cosp - uy*sinp)
                          /temp + ux*cost;
-        Photon_Ptr->uy = sint*(uy*uz*cosp + ux*sinp)
+        Photon_Ptr->uy[vec_num] = sint*(uy*uz*cosp + ux*sinp)
                          /temp + uy*cost;
-        Photon_Ptr->uz = -sint*cosp*temp + uz*cost;
+        Photon_Ptr->uz[vec_num] = -sint*cosp*temp + uz*cost;
     }
 }
 
 /***********************************************************
  *	Move the photon s away in the current layer of medium.
  ****/
-void Hop(PhotonStruct *	Photon_Ptr)
+void Hop(Photon8Struct *	Photon_Ptr, int vec_num)
 {
-    double s = Photon_Ptr->s;
+    double s = Photon_Ptr->s[vec_num];
 
-    Photon_Ptr->x += s*Photon_Ptr->ux;
-    Photon_Ptr->y += s*Photon_Ptr->uy;
-    Photon_Ptr->z += s*Photon_Ptr->uz;
+    Photon_Ptr->x[vec_num] += s*Photon_Ptr->ux[vec_num];
+    Photon_Ptr->y[vec_num] += s*Photon_Ptr->uy[vec_num];
+    Photon_Ptr->z[vec_num] += s*Photon_Ptr->uz[vec_num];
 }
 
 /***********************************************************
@@ -228,24 +233,25 @@ void Hop(PhotonStruct *	Photon_Ptr)
  *
  *	Make sure uz !=0 before calling this function.
  ****/
-void StepSizeInGlass(PhotonStruct *  Photon_Ptr,
-                     InputStruct  *  In_Ptr)
+void StepSizeInGlass(Photon8Struct *  Photon_Ptr,
+                     InputStruct  *  In_Ptr,
+                     int vec_num)
 {
     double dl_b;	/* step size to boundary. */
-    short  layer = Photon_Ptr->layer;
-    double uz = Photon_Ptr->uz;
+    short  layer = Photon_Ptr->layer[vec_num];
+    double uz = Photon_Ptr->uz[vec_num];
 
     /* Stepsize to the boundary. */
     if(uz>0.0)
-        dl_b = (In_Ptr->layerspecs[layer].z1 - Photon_Ptr->z)
+        dl_b = (In_Ptr->layerspecs[layer].z1 - Photon_Ptr->z[vec_num])
                /uz;
     else if(uz<0.0)
-        dl_b = (In_Ptr->layerspecs[layer].z0 - Photon_Ptr->z)
+        dl_b = (In_Ptr->layerspecs[layer].z0 - Photon_Ptr->z[vec_num])
                /uz;
     else
         dl_b = 0.0;
 
-    Photon_Ptr->s = dl_b;
+    Photon_Ptr->s[vec_num] = dl_b;
 }
 
 /***********************************************************
@@ -258,15 +264,15 @@ void StepSizeInGlass(PhotonStruct *  Photon_Ptr,
  *	Layer is the index to layer.
  *	In_Ptr is the input parameters.
  ****/
-void StepSizeInTissue(PhotonStruct * Photon_Ptr,
+void StepSizeInTissue(Photon8Struct * Photon_Ptr,
                       InputStruct  * In_Ptr,
-			VSLStreamStatePtr  stream, double * result, short * count)
+			VSLStreamStatePtr  stream, double * result, short * count, int vec_num)
 {
-    short  layer = Photon_Ptr->layer;
+    short  layer = Photon_Ptr->layer[vec_num];
     double mua = In_Ptr->layerspecs[layer].mua;
     double mus = In_Ptr->layerspecs[layer].mus;
 
-    if(Photon_Ptr->sleft == 0.0) {  /* make a new step. */
+    if(Photon_Ptr->sleft[vec_num] == 0.0) {  /* make a new step. */
         double rnd;
 
         do{
@@ -275,10 +281,10 @@ void StepSizeInTissue(PhotonStruct * Photon_Ptr,
         	(*count) %= 1024;
 	}
         while( rnd <= 0.0 );    /* avoid zero. */
-        Photon_Ptr->s = -log(rnd)/(mua+mus);
+        Photon_Ptr->s[vec_num] = -log(rnd)/(mua+mus);
     } else {	/* take the leftover. */
-        Photon_Ptr->s = Photon_Ptr->sleft/(mua+mus);
-        Photon_Ptr->sleft = 0.0;
+        Photon_Ptr->s[vec_num] = Photon_Ptr->sleft[vec_num]/(mua+mus);
+        Photon_Ptr->sleft[vec_num] = 0.0;
     }
 }
 
@@ -290,29 +296,29 @@ void StepSizeInTissue(PhotonStruct * Photon_Ptr,
  * 	If the projected step hits the boundary, the members
  *	s and sleft of Photon_Ptr are updated.
  ****/
-Boolean HitBoundary(PhotonStruct *  Photon_Ptr,
-                    InputStruct  *  In_Ptr)
+Boolean HitBoundary(Photon8Struct *  Photon_Ptr,
+                    InputStruct  *  In_Ptr, int vec_num)
 {
     double dl_b;  /* length to boundary. */
-    short  layer = Photon_Ptr->layer;
-    double uz = Photon_Ptr->uz;
+    short  layer = Photon_Ptr->layer[vec_num];
+    double uz = Photon_Ptr->uz[vec_num];
     Boolean hit;
 
     /* Distance to the boundary. */
     if(uz>0.0)
         dl_b = (In_Ptr->layerspecs[layer].z1
-                - Photon_Ptr->z)/uz;	/* dl_b>0. */
+                - Photon_Ptr->z[vec_num])/uz;	/* dl_b>0. */
     else if(uz<0.0)
         dl_b = (In_Ptr->layerspecs[layer].z0
-                - Photon_Ptr->z)/uz;	/* dl_b>0. */
+                - Photon_Ptr->z[vec_num])/uz;	/* dl_b>0. */
 
-    if(uz != 0.0 && Photon_Ptr->s > dl_b) {
+    if(uz != 0.0 && Photon_Ptr->s[vec_num] > dl_b) {
         /* not horizontal & crossing. */
         double mut = In_Ptr->layerspecs[layer].mua
                      + In_Ptr->layerspecs[layer].mus;
 
-        Photon_Ptr->sleft = (Photon_Ptr->s - dl_b)*mut;
-        Photon_Ptr->s    = dl_b;
+        Photon_Ptr->sleft[vec_num] = (Photon_Ptr->s[vec_num] - dl_b)*mut;
+        Photon_Ptr->s[vec_num]    = dl_b;
         hit = 1;
     } else
         hit = 0;
@@ -331,18 +337,18 @@ Boolean HitBoundary(PhotonStruct *  Photon_Ptr,
  *	elements.
  ****/
 void Drop(InputStruct  *	In_Ptr,
-          PhotonStruct *	Photon_Ptr,
-          OutStruct *		Out_Ptr)
+          Photon8Struct *	Photon_Ptr,
+          OutStruct *		Out_Ptr, int vec_num)
 {
     double dwa;		/* absorbed weight.*/
-    double x = Photon_Ptr->x;
-    double y = Photon_Ptr->y;
+    double x = Photon_Ptr->x[vec_num];
+    double y = Photon_Ptr->y[vec_num];
     short  iz, ir;	/* index to z & r. */
-    short  layer = Photon_Ptr->layer;
+    short  layer = Photon_Ptr->layer[vec_num];
     double mua, mus;
 
     /* compute array indices. */
-    iz = (short)(Photon_Ptr->z/In_Ptr->dz);
+    iz = (short)(Photon_Ptr->z[vec_num]/In_Ptr->dz);
     if(iz>In_Ptr->nz-1) iz=In_Ptr->nz-1;
 
     ir = (short)(sqrt(x*x+y*y)/In_Ptr->dr);
@@ -351,8 +357,8 @@ void Drop(InputStruct  *	In_Ptr,
     /* update photon weight. */
     mua = In_Ptr->layerspecs[layer].mua;
     mus = In_Ptr->layerspecs[layer].mus;
-    dwa = Photon_Ptr->w * mua/(mua+mus);
-    Photon_Ptr->w -= dwa;
+    dwa = Photon_Ptr->w[vec_num] * mua/(mua+mus);
+    Photon_Ptr->w[vec_num] -= dwa;
 
     /* assign dwa to the absorption array element. */
     Out_Ptr->A_rz[ir][iz]	+= dwa;
@@ -362,16 +368,16 @@ void Drop(InputStruct  *	In_Ptr,
  *	The photon weight is small, and the photon packet tries
  *	to survive a roulette.
  ****/
-void Roulette(PhotonStruct * Photon_Ptr, VSLStreamStatePtr  stream, double * result, short * count) 
+void Roulette(Photon8Struct * Photon_Ptr, VSLStreamStatePtr  stream, double * result, short * count, int vec_num) 
 {
-    if(Photon_Ptr->w == 0.0)
-        Photon_Ptr->dead = 1;
+    if(Photon_Ptr->w[vec_num] == 0.0)
+        Photon_Ptr->dead[vec_num] = 1;
     else {
     	if(mkl_rand(stream, result, count) < CHANCE) /* survived the roulette.*/
-        	Photon_Ptr->w /= CHANCE;
+        	Photon_Ptr->w[vec_num] /= CHANCE;
     	else
-        	Photon_Ptr->dead = 1;
-	(*count) ++;
+        	Photon_Ptr->dead[vec_num] = 1;
+	    (*count) ++;
         (*count) %= 1024;
     }
 }
@@ -446,23 +452,23 @@ double RFresnel(double n1,	/* incident refractive index.*/
  ****/
 void RecordR(double			Refl,	/* reflectance. */
              InputStruct  *	In_Ptr,
-             PhotonStruct *	Photon_Ptr,
-             OutStruct *	Out_Ptr)
+             Photon8Struct *	Photon_Ptr,
+             OutStruct *	Out_Ptr, int vec_num)
 {
-    double x = Photon_Ptr->x;
-    double y = Photon_Ptr->y;
+    double x = Photon_Ptr->x[vec_num];
+    double y = Photon_Ptr->y[vec_num];
     short  ir, ia;	/* index to r & angle. */
 
     ir = (short)(sqrt(x*x+y*y)/In_Ptr->dr);
     if(ir>In_Ptr->nr-1) ir=In_Ptr->nr-1;
 
-    ia = (short)(acos(-Photon_Ptr->uz)/In_Ptr->da);
+    ia = (short)(acos(-Photon_Ptr->uz[vec_num])/In_Ptr->da);
     if(ia>In_Ptr->na-1) ia=In_Ptr->na-1;
 
     /* assign photon to the reflection array element. */
-    Out_Ptr->Rd_ra[ir][ia] += Photon_Ptr->w*(1.0-Refl);
+    Out_Ptr->Rd_ra[ir][ia] += Photon_Ptr->w[vec_num]*(1.0-Refl);
 
-    Photon_Ptr->w *= Refl;
+    Photon_Ptr->w[vec_num] *= Refl;
 }
 
 /***********************************************************
@@ -474,23 +480,23 @@ void RecordR(double			Refl,	/* reflectance. */
  ****/
 void RecordT(double 		Refl,
              InputStruct  *	In_Ptr,
-             PhotonStruct *	Photon_Ptr,
-             OutStruct *	Out_Ptr)
+             Photon8Struct *	Photon_Ptr,
+             OutStruct *	Out_Ptr, int vec_num)
 {
-    double x = Photon_Ptr->x;
-    double y = Photon_Ptr->y;
+    double x = Photon_Ptr->x[vec_num];
+    double y = Photon_Ptr->y[vec_num];
     short  ir, ia;	/* index to r & angle. */
 
     ir = (short)(sqrt(x*x+y*y)/In_Ptr->dr);
     if(ir>In_Ptr->nr-1) ir=In_Ptr->nr-1;
 
-    ia = (short)(acos(Photon_Ptr->uz)/In_Ptr->da);
+    ia = (short)(acos(Photon_Ptr->uz[vec_num])/In_Ptr->da);
     if(ia>In_Ptr->na-1) ia=In_Ptr->na-1;
 
     /* assign photon to the transmittance array element. */
-    Out_Ptr->Tt_ra[ir][ia] += Photon_Ptr->w*(1.0-Refl);
+    Out_Ptr->Tt_ra[ir][ia] += Photon_Ptr->w[vec_num]*(1.0-Refl);
 
-    Photon_Ptr->w *= Refl;
+    Photon_Ptr->w[vec_num] *= Refl;
 }
 
 /***********************************************************
@@ -513,15 +519,15 @@ void RecordT(double 		Refl,
  *	Update the photon parmameters.
  ****/
 void CrossUpOrNot(InputStruct  *	In_Ptr,
-                  PhotonStruct *	Photon_Ptr,
+                  Photon8Struct *	Photon_Ptr,
                   OutStruct *		Out_Ptr,
-		VSLStreamStatePtr  stream, double * result, short * count)
+		VSLStreamStatePtr  stream, double * result, short * count, int vec_num)
 {
-    double uz = Photon_Ptr->uz; /* z directional cosine. */
+    double uz = Photon_Ptr->uz[vec_num]; /* z directional cosine. */
     double uz1;	/* cosines of transmission alpha. always */
     /* positive. */
     double r=0.0;	/* reflectance */
-    short  layer = Photon_Ptr->layer;
+    short  layer = Photon_Ptr->layer[vec_num];
     double ni = In_Ptr->layerspecs[layer].n;
     double nt = In_Ptr->layerspecs[layer-1].n;
 
@@ -532,37 +538,37 @@ void CrossUpOrNot(InputStruct  *	In_Ptr,
 
 #if PARTIALREFLECTION
     if(layer == 1 && r<1.0) {	/* partially transmitted. */
-        Photon_Ptr->uz = -uz1;	/* transmitted photon. */
-        RecordR(r, In_Ptr, Photon_Ptr, Out_Ptr);
-        Photon_Ptr->uz = -uz;	/* reflected photon. */
+        Photon_Ptr->uz[vec_num] = -uz1;	/* transmitted photon. */
+        RecordR(r, In_Ptr, Photon_Ptr, Out_Ptr, vec_num);
+        Photon_Ptr->uz[vec_num] = -uz;	/* reflected photon. */
     } 
     else 
     {
 	if(mkl_rand(stream, result, count) > r) { /* transmitted to layer-1. */
-        	Photon_Ptr->layer--;
-	        Photon_Ptr->ux *= ni/nt;
-	        Photon_Ptr->uy *= ni/nt;
-	        Photon_Ptr->uz = -uz1;
+        	Photon_Ptr->layer[vec_num]--;
+	        Photon_Ptr->ux[vec_num] *= ni/nt;
+	        Photon_Ptr->uy[vec_num] *= ni/nt;
+	        Photon_Ptr->uz[vec_num] = -uz1;
         } 
         else			      		/* reflected. */
-        	Photon_Ptr->uz = -uz;
+        	Photon_Ptr->uz[vec_num] = -uz;
 	(*count) ++;
         (*count) %= 1024;
     }
 #else
     if(mkl_rand(stream, result, count) > r) {		/* transmitted to layer-1. */
         if(layer==1)  {
-            Photon_Ptr->uz = -uz1;
-            RecordR(0.0, In_Ptr, Photon_Ptr, Out_Ptr);
-            Photon_Ptr->dead = 1;
+            Photon_Ptr->uz[vec_num] = -uz1;
+            RecordR(0.0, In_Ptr, Photon_Ptr, Out_Ptr, vec_num);
+            Photon_Ptr->dead[vec_num] = 1;
         } else {
-            Photon_Ptr->layer--;
-            Photon_Ptr->ux *= ni/nt;
-            Photon_Ptr->uy *= ni/nt;
-            Photon_Ptr->uz = -uz1;
+            Photon_Ptr->layer[vec_num]--;
+            Photon_Ptr->ux[vec_num] *= ni/nt;
+            Photon_Ptr->uy[vec_num] *= ni/nt;
+            Photon_Ptr->uz[vec_num] = -uz1;
         }
     } else 						/* reflected. */
-        Photon_Ptr->uz = -uz;
+        Photon_Ptr->uz[vec_num] = -uz;
     (*count) ++;
     (*count) %= 1024;
 #endif
@@ -581,14 +587,14 @@ void CrossUpOrNot(InputStruct  *	In_Ptr,
  *	Update the photon parmameters.
  ****/
 void CrossDnOrNot(InputStruct  *	In_Ptr,
-                  PhotonStruct *	Photon_Ptr,
+                  Photon8Struct *	Photon_Ptr,
                   OutStruct *		Out_Ptr,
-		 VSLStreamStatePtr  stream, double * result, short * count)
+		 VSLStreamStatePtr  stream, double * result, short * count, int vec_num)
 {
-    double uz = Photon_Ptr->uz; /* z directional cosine. */
+    double uz = Photon_Ptr->uz[vec_num]; /* z directional cosine. */
     double uz1;	/* cosines of transmission alpha. */
     double r=0.0;	/* reflectance */
-    short  layer = Photon_Ptr->layer;
+    short  layer = Photon_Ptr->layer[vec_num];
     double ni = In_Ptr->layerspecs[layer].n;
     double nt = In_Ptr->layerspecs[layer+1].n;
 
@@ -599,35 +605,35 @@ void CrossDnOrNot(InputStruct  *	In_Ptr,
 
 #if PARTIALREFLECTION
     if(layer == In_Ptr->num_layers && r<1.0) {
-        Photon_Ptr->uz = uz1;
-        RecordT(r, In_Ptr, Photon_Ptr, Out_Ptr);
-        Photon_Ptr->uz = -uz;
+        Photon_Ptr->uz[vec_num] = uz1;
+        RecordT(r, In_Ptr, Photon_Ptr, Out_Ptr, vec_num);
+        Photon_Ptr->uz[vec_num] = -uz;
     } else {
 	 if(mkl_rand(stream, result, count) > r) { /* transmitted to layer+1. */
-        	Photon_Ptr->layer++;
-	        Photon_Ptr->ux *= ni/nt;
-	        Photon_Ptr->uy *= ni/nt;
-	        Photon_Ptr->uz = uz1;
+        	Photon_Ptr->layer[vec_num]++;
+	        Photon_Ptr->ux[vec_num] *= ni/nt;
+	        Photon_Ptr->uy[vec_num] *= ni/nt;
+	        Photon_Ptr->uz[vec_num] = uz1;
     	} 
 	else 						/* reflected. */
-        	Photon_Ptr->uz = -uz;
+        	Photon_Ptr->uz[vec_num] = -uz;
 	(*count) ++;
         (*count) %= 1024;
    }
 #else
     if(mkl_rand(stream, result, count) > r) {		/* transmitted to layer+1. */
         if(layer == In_Ptr->num_layers) {
-            Photon_Ptr->uz = uz1;
-            RecordT(0.0, In_Ptr, Photon_Ptr, Out_Ptr);
-            Photon_Ptr->dead = 1;
+            Photon_Ptr->uz[vec_num] = uz1;
+            RecordT(0.0, In_Ptr, Photon_Ptr, Out_Ptr, vec_num);
+            Photon_Ptr->dead[vec_num] = 1;
         } else {
-            Photon_Ptr->layer++;
-            Photon_Ptr->ux *= ni/nt;
-            Photon_Ptr->uy *= ni/nt;
-            Photon_Ptr->uz = uz1;
+            Photon_Ptr->layer[vec_num]++;
+            Photon_Ptr->ux[vec_num] *= ni/nt;
+            Photon_Ptr->uy[vec_num] *= ni/nt;
+            Photon_Ptr->uz[vec_num] = uz1;
         }
     } else 						/* reflected. */
-        Photon_Ptr->uz = -uz;
+        Photon_Ptr->uz[vec_num] = -uz;
     (*count) ++;
     (*count) %= 1024;
 #endif
@@ -636,14 +642,14 @@ void CrossDnOrNot(InputStruct  *	In_Ptr,
 /***********************************************************
  ****/
 void CrossOrNot(InputStruct  *	In_Ptr,
-                PhotonStruct *	Photon_Ptr,
+                Photon8Struct *	Photon_Ptr,
                 OutStruct    *	Out_Ptr,
-		VSLStreamStatePtr  stream, double * result, short * count)
+		VSLStreamStatePtr  stream, double * result, short * count, int vec_num)
 {
-    if(Photon_Ptr->uz < 0.0)
-        CrossUpOrNot(In_Ptr, Photon_Ptr, Out_Ptr, stream, result, count);
+    if(Photon_Ptr->uz[vec_num] < 0.0)
+        CrossUpOrNot(In_Ptr, Photon_Ptr, Out_Ptr, stream, result, count, vec_num);
     else
-        CrossDnOrNot(In_Ptr, Photon_Ptr, Out_Ptr, stream, result, count);
+        CrossDnOrNot(In_Ptr, Photon_Ptr, Out_Ptr, stream, result, count, vec_num);
 }
 
 /***********************************************************
@@ -652,19 +658,19 @@ void CrossOrNot(InputStruct  *	In_Ptr,
  *	never interact with tissue again.
  ****/
 void HopInGlass(InputStruct  * In_Ptr,
-                PhotonStruct * Photon_Ptr,
+                Photon8Struct * Photon_Ptr,
                 OutStruct    * Out_Ptr,
-		VSLStreamStatePtr * stream, double * result, short * count)
+		VSLStreamStatePtr * stream, double * result, short * count, int vec_num)
 {
     double dl;     /* step size. 1/cm */
 
-    if(Photon_Ptr->uz == 0.0) {
+    if(Photon_Ptr->uz[vec_num] == 0.0) {
         /* horizontal photon in glass is killed. */
-        Photon_Ptr->dead = 1;
+        Photon_Ptr->dead[vec_num] = 1;
     } else {
-        StepSizeInGlass(Photon_Ptr, In_Ptr);
-        Hop(Photon_Ptr);
-        CrossOrNot(In_Ptr, Photon_Ptr, Out_Ptr, stream, result, count);
+        StepSizeInGlass(Photon_Ptr, In_Ptr, vec_num);
+        Hop(Photon_Ptr, vec_num);
+        CrossOrNot(In_Ptr, Photon_Ptr, Out_Ptr, stream, result, count, vec_num);
     }
 }
 
@@ -683,38 +689,38 @@ void HopInGlass(InputStruct  * In_Ptr,
  *	repeat the above process.
  ****/
 void HopDropSpinInTissue(InputStruct  *  In_Ptr,
-                         PhotonStruct *  Photon_Ptr,
-                         OutStruct    *  Out_Ptr, VSLStreamStatePtr stream, double * result, short * count)
+                         Photon8Struct *  Photon_Ptr,
+                         OutStruct    *  Out_Ptr, VSLStreamStatePtr stream, double * result, short * count,                          int vec_num)
 {
-    StepSizeInTissue(Photon_Ptr, In_Ptr, stream, result, count);
+    StepSizeInTissue(Photon_Ptr, In_Ptr, stream, result, count, vec_num);
 
-    if(HitBoundary(Photon_Ptr, In_Ptr)) {
-        Hop(Photon_Ptr);	/* move to boundary plane. */
-        CrossOrNot(In_Ptr, Photon_Ptr, Out_Ptr, stream, result, count);
+    if(HitBoundary(Photon_Ptr, In_Ptr, vec_num)) {
+        Hop(Photon_Ptr, vec_num);	/* move to boundary plane. */
+        CrossOrNot(In_Ptr, Photon_Ptr, Out_Ptr, stream, result, count, vec_num);
     } else {
-        Hop(Photon_Ptr);
-        Drop(In_Ptr, Photon_Ptr, Out_Ptr);
-        Spin(In_Ptr->layerspecs[Photon_Ptr->layer].g,
-             Photon_Ptr, stream, result, count);
+        Hop(Photon_Ptr,vec_num);
+        Drop(In_Ptr, Photon_Ptr, Out_Ptr, vec_num);
+        Spin(In_Ptr->layerspecs[Photon_Ptr->layer[vec_num]].g,
+             Photon_Ptr, stream, result, count, vec_num);
     }
 }
 
 /***********************************************************
  ****/
 void HopDropSpin(InputStruct  *  In_Ptr,
-                 PhotonStruct *  Photon_Ptr,
+                 Photon8Struct *  Photon_Ptr,
                  OutStruct    *  Out_Ptr,
-		VSLStreamStatePtr  stream, double * result, short * count)
+		VSLStreamStatePtr  stream, double * result, short * count, int vec_num)
 {
-    short layer = Photon_Ptr->layer;
+    short layer = Photon_Ptr->layer[vec_num];
 
     if((In_Ptr->layerspecs[layer].mua == 0.0)
             && (In_Ptr->layerspecs[layer].mus == 0.0))
         /* glass layer. */
-        HopInGlass(In_Ptr, Photon_Ptr, Out_Ptr, stream, result, count);
+        HopInGlass(In_Ptr, Photon_Ptr, Out_Ptr, stream, result, count, vec_num);
     else
-        HopDropSpinInTissue(In_Ptr, Photon_Ptr, Out_Ptr, stream, result, count);
+        HopDropSpinInTissue(In_Ptr, Photon_Ptr, Out_Ptr, stream, result, count, vec_num);
 
-    if( Photon_Ptr->w < In_Ptr->Wth && !Photon_Ptr->dead)
-        Roulette(Photon_Ptr, stream, result, count);
+    if( Photon_Ptr->w[vec_num] < In_Ptr->Wth && !Photon_Ptr->dead[vec_num])
+        Roulette(Photon_Ptr, stream, result, count, vec_num);
 }
