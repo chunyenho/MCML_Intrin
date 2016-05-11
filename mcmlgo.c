@@ -239,17 +239,76 @@ void Spin(double g,
 
 void Spin8AndRoul(InputStruct  * In_Ptr,
           Photon8Struct * Photon_Ptr,
-	  VSLStreamStatePtr  stream, double * result, short * count)
+	  VSLStreamStatePtr  stream, double * result, short * count, double * result_t)
 {
     int i;
-    double g;
+    double g[8];
+    double cost[8], sint[8];	/* cosine and sine of the */
+    double cosp[8], sinp[8];	/* cosine and sine of the */
+    double ux[8], uy[8], uz[8];
+    double psi[8];
+    double temp[8];
+    vdRngUniform( VSL_RNG_METHOD_UNIFORM_STD, stream, 16, result_t, 0.0, 1.0 );
+    #pragma simd 
     for ( i = 0; i<8 ; i++)
     {
-        g = In_Ptr->layerspecs[Photon_Ptr->layer[i]].g;
-        Spin(g , Photon_Ptr, stream, result, count, i);
+        g[i] = In_Ptr->layerspecs[Photon_Ptr->layer[i]].g;
+////////////SPIN_START
+    ux[i] = Photon_Ptr->ux[i];
+    uy[i] = Photon_Ptr->uy[i];
+    uz[i] = Photon_Ptr->uz[i];
+
+//    cost[i] = SpinTheta(g[i], stream, result, count);
+///////////SPINTheta_START
+    if(g[i] == 0.0)
+    {
+/*        cost[i] = 2*mkl_rand(stream, result, count) -1;
+		(*count) ++;
+        (*count) %= 1024;*/
+        cost[i] = 2*result_t[i];
+    }
+    else {
+/*        temp[i] = (1-g[i]*g[i])/(1-g[i]+2*g[i]*mkl_rand(stream, result, count));
+		(*count) ++;
+        (*count) %= 1024;*/
+        temp[i] = (1-g[i]*g[i])/(1-g[i]+2*g[i]*result_t[i]);
+        cost[i] = (1+g[i]*g[i] - temp[i]*temp[i])/(2*g[i]);
+        if(cost[i] < -1) cost[i] = -1;
+        else if(cost[i] > 1) cost[i] = 1;
+    }
+///////////SPINTheta_END
+    sint[i] = sqrt(1.0 - cost[i]*cost[i]);
+    /* sqrt() is faster than sin(). */
+
+/*    psi[i] = 2.0*PI*mkl_rand(stream, result, count); 
+	(*count) ++;
+    (*count) %= 1024;*/
+    psi[i] = 2.0*PI*result_t[i+8];
+    cosp[i] = cos(psi[i]);
+    if(psi[i]<PI)
+        sinp[i] = sqrt(1.0 - cosp[i]*cosp[i]);
+    /* sqrt() is faster than sin(). */
+    else
+        sinp[i] = - sqrt(1.0 - cosp[i]*cosp[i]);
+
+    if(fabs(uz[i]) > COSZERO)  { 	/* normal incident. */
+        Photon_Ptr->ux[i] = sint[i]*cosp[i];
+        Photon_Ptr->uy[i] = sint[i]*sinp[i];
+        Photon_Ptr->uz[i] = cost[i]*SIGN(uz[i]);
+        /* SIGN() is faster than division. */
+    } else  {		/* regular incident. */
+        temp[i] = sqrt(1.0 - uz[i]*uz[i]);
+        Photon_Ptr->ux[i] = sint[i]*(ux[i]*uz[i]*cosp[i] - uy[i]*sinp[i])
+                         /temp[i] + ux[i]*cost[i];
+        Photon_Ptr->uy[i] = sint[i]*(uy[i]*uz[i]*cosp[i] + ux[i]*sinp[i])
+                         /temp[i] + uy[i]*cost[i];
+        Photon_Ptr->uz[i] = -sint[i]*cosp[i]*temp[i] + uz[i]*cost[i];
+    }
+}
+////////////SPIN_END
+    for ( i = 0; i<8 ; i++)
         if( Photon_Ptr->w[i] < In_Ptr->Wth && !Photon_Ptr->dead[i])
              Roulette(Photon_Ptr, stream, result, count, i);
-    }
 }
 /***********************************************************
  *	Move the photon s away in the current layer of medium.

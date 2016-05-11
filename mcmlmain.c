@@ -42,7 +42,7 @@ void HopDropSpin(InputStruct  *,Photon8Struct *,OutStruct *, VSLStreamStatePtr *
 void SumScaleResult(InputStruct, OutStruct *);
 void WriteResult(InputStruct, OutStruct, char *);
 void CollectResult(InputStruct , OutStruct *, OutStruct *);
-void Spin8AndRoul(InputStruct  * In_Ptr, Photon8Struct * Photon_Ptr, VSLStreamStatePtr  stream, double * result, short * count);
+void Spin8AndRoul(InputStruct  * In_Ptr, Photon8Struct * Photon_Ptr, VSLStreamStatePtr  stream, double * result, short * count, double *);
 static double dtime()
 {
     double tseconds = 0.0;
@@ -196,6 +196,8 @@ void DoOneRun(short NumRuns, InputStruct *In_Ptr, int num_threads)
     	double result[1024];
     	short count = 0;
         long num_photons_thread = num_photons/omp_get_num_threads();
+        double* result_t;
+        result_t = (double *)malloc(sizeof(double)*16);
 //    	vslNewStream( &stream, VSL_BRNG_MT19937, rand_seed[tid] );
         vslNewStream( &stream, VSL_BRNG_MT19937, 777 );
         Launch8Photon(out_parm[tid].Rsp, In_Ptr->layerspecs, &photon);
@@ -206,7 +208,7 @@ void DoOneRun(short NumRuns, InputStruct *In_Ptr, int num_threads)
                 int vec_num = j;
                 HopDrop(In_Ptr, &photon, &out_parm[tid], stream, &result, &count, vec_num, &num_photons_thread); 
             }
-            Spin8AndRoul(In_Ptr, &photon, stream, &result, &count);
+            Spin8AndRoul(In_Ptr, &photon, stream, &result, &count, result_t);
             // May launch new photons
             for(j = 0; j < 8; j++)
             {
