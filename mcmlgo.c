@@ -91,6 +91,30 @@ double Rspecular(LayerStruct * Layerspecs_Ptr)
     return (r1);
 }
 
+void LaunchPhoton(double Rspecular,
+                    LayerStruct  * Layerspecs_Ptr,
+                    Photon8Struct * Photon_Ptr, int vec_num)
+{
+      Photon_Ptr->w[vec_num]       = 1.0 - Rspecular;
+      Photon_Ptr->dead[vec_num]    = 0;
+      Photon_Ptr->layer[vec_num] = 1;
+      Photon_Ptr->s[vec_num]   = 0;
+      Photon_Ptr->sleft[vec_num]= 0;
+  
+      Photon_Ptr->x[vec_num]   = 0.0;
+      Photon_Ptr->y[vec_num]       = 0.0;
+      Photon_Ptr->z[vec_num]       = 0.0;
+      Photon_Ptr->ux[vec_num]  = 0.0;
+      Photon_Ptr->uy[vec_num]  = 0.0;
+      Photon_Ptr->uz[vec_num]  = 1.0;
+  
+      if((Layerspecs_Ptr[1].mua == 0.0)
+              && (Layerspecs_Ptr[1].mus == 0.0))  { /* glass layer. */
+          Photon_Ptr->layer[vec_num]   = 2;
+          Photon_Ptr->z[vec_num]   = Layerspecs_Ptr[2].z0;
+      }   
+}                
+
 /***********************************************************
  *	Initialize a photon packet.
  ****/
@@ -212,6 +236,21 @@ void Spin(double g,
     }
 }
 
+
+void Spin8AndRoul(InputStruct  * In_Ptr,
+          Photon8Struct * Photon_Ptr,
+	  VSLStreamStatePtr  stream, double * result, short * count)
+{
+    int i;
+    double g;
+    for ( i = 0; i<8 ; i++)
+    {
+        g = In_Ptr->layerspecs[Photon_Ptr->layer[i]].g;
+        Spin(g , Photon_Ptr, stream, result, count, i);
+        if( Photon_Ptr->w[i] < In_Ptr->Wth && !Photon_Ptr->dead[i])
+             Roulette(Photon_Ptr, stream, result, count, i);
+    }
+}
 /***********************************************************
  *	Move the photon s away in the current layer of medium.
  ****/
@@ -688,39 +727,69 @@ void HopInGlass(InputStruct  * In_Ptr,
  *	site.  If the unfinished stepsize is still too long,
  *	repeat the above process.
  ****/
-void HopDropSpinInTissue(InputStruct  *  In_Ptr,
+void HopDropInTissue(InputStruct  *  In_Ptr,
                          Photon8Struct *  Photon_Ptr,
-                         OutStruct    *  Out_Ptr, VSLStreamStatePtr stream, double * result, short * count,                          int vec_num)
+                         OutStruct    *  Out_Ptr, VSLStreamStatePtr stream, double * result, short * count, int vec_num, int * num_photons)
 {
     StepSizeInTissue(Photon_Ptr, In_Ptr, stream, result, count, vec_num);
 
     if(HitBoundary(Photon_Ptr, In_Ptr, vec_num)) {
         Hop(Photon_Ptr, vec_num);	/* move to boundary plane. */
         CrossOrNot(In_Ptr, Photon_Ptr, Out_Ptr, stream, result, count, vec_num);
+        if( Photon_Ptr->w[vec_num] < In_Ptr->Wth && !Photon_Ptr->dead[vec_num])
+             Roulette(Photon_Ptr, stream, result, count, vec_num);
+         if( !Photon_Ptr->dead[vec_num] )
+             HopDrop(In_Ptr, Photon_Ptr, Out_Ptr, stream, result, count, vec_num, num_photons);
+         else
+         {   
+             //add a new photon
+             //printf("before: %ld", *num_photons);
+             (*num_photons)--;
+             //printf("after: %ld\n", *num_photons);
+             LaunchPhoton(Out_Ptr->Rsp, In_Ptr->layerspecs, Photon_Ptr, vec_num);
+             HopDrop(In_Ptr, Photon_Ptr, Out_Ptr, stream, result, count, vec_num, num_photons);
+         }  
     } else {
         Hop(Photon_Ptr,vec_num);
         Drop(In_Ptr, Photon_Ptr, Out_Ptr, vec_num);
-        Spin(In_Ptr->layerspecs[Photon_Ptr->layer[vec_num]].g,
-             Photon_Ptr, stream, result, count, vec_num);
+        // Ready to spin
+//        Spin(In_Ptr->layerspecs[Photon_Ptr->layer[vec_num]].g,
+//             Photon_Ptr, stream, result, count, vec_num);
     }
 }
 
 /***********************************************************
  ****/
-void HopDropSpin(InputStruct  *  In_Ptr,
+void HopDrop(InputStruct  *  In_Ptr,
                  Photon8Struct *  Photon_Ptr,
                  OutStruct    *  Out_Ptr,
-		VSLStreamStatePtr  stream, double * result, short * count, int vec_num)
+		VSLStreamStatePtr  stream, double * result, short * count, int vec_num, int * num_photons)
 {
     short layer = Photon_Ptr->layer[vec_num];
 
     if((In_Ptr->layerspecs[layer].mua == 0.0)
             && (In_Ptr->layerspecs[layer].mus == 0.0))
         /* glass layer. */
+    {
         HopInGlass(In_Ptr, Photon_Ptr, Out_Ptr, stream, result, count, vec_num);
+        if( Photon_Ptr->w[vec_num] < In_Ptr->Wth && !Photon_Ptr->dead[vec_num])
+            Roulette(Photon_Ptr, stream, result, count, vec_num);
+        if( !Photon_Ptr->dead[vec_num] )
+            HopDrop(In_Ptr, Photon_Ptr, Out_Ptr, stream, result, count, vec_num, num_photons);
+        else
+        {
+            //add a new photon
+            //printf("before: %d\n", *num_photons);
+            (*num_photons)--;
+            //printf("after: %d\n", *num_photons);
+            LaunchPhoton(Out_Ptr->Rsp, In_Ptr->layerspecs, Photon_Ptr, vec_num);
+            HopDrop(In_Ptr, Photon_Ptr, Out_Ptr, stream, result, count, vec_num, num_photons);
+        }
+    }    
     else
-        HopDropSpinInTissue(In_Ptr, Photon_Ptr, Out_Ptr, stream, result, count, vec_num);
-
-    if( Photon_Ptr->w[vec_num] < In_Ptr->Wth && !Photon_Ptr->dead[vec_num])
-        Roulette(Photon_Ptr, stream, result, count, vec_num);
+    {
+        HopDropInTissue(In_Ptr, Photon_Ptr, Out_Ptr, stream, result, count, vec_num, num_photons);
+//        if( Photon_Ptr->w[vec_num] < In_Ptr->Wth && !Photon_Ptr->dead[vec_num])
+//            Roulette(Photon_Ptr, stream, result, count, vec_num);
+    }
 }

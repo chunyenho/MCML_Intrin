@@ -42,7 +42,7 @@ void HopDropSpin(InputStruct  *,Photon8Struct *,OutStruct *, VSLStreamStatePtr *
 void SumScaleResult(InputStruct, OutStruct *);
 void WriteResult(InputStruct, OutStruct, char *);
 void CollectResult(InputStruct , OutStruct *, OutStruct *);
-
+void Spin8AndRoul(InputStruct  * In_Ptr, Photon8Struct * Photon_Ptr, VSLStreamStatePtr  stream, double * result, short * count);
 static double dtime()
 {
     double tseconds = 0.0;
@@ -192,21 +192,36 @@ void DoOneRun(short NumRuns, InputStruct *In_Ptr, int num_threads)
     #pragma omp parallel private(photon)
     {
         int tid = omp_get_thread_num(), j;
-	VSLStreamStatePtr stream;
-	double result[1024];
-	short count = 0;
-	vslNewStream( &stream, VSL_BRNG_MT19937, rand_seed[tid] );
-        #pragma omp for schedule(dynamic,10)
-        for (i = 0 ; i < num_photons/8 ; i++ ) {
-            Launch8Photon(out_parm[tid].Rsp, In_Ptr->layerspecs, &photon);
-            for (j=0 ; j<8 ; j++)
+	    VSLStreamStatePtr stream;
+    	double result[1024];
+    	short count = 0;
+        long num_photons_thread = num_photons/omp_get_num_threads();
+//    	vslNewStream( &stream, VSL_BRNG_MT19937, rand_seed[tid] );
+        vslNewStream( &stream, VSL_BRNG_MT19937, 777 );
+        Launch8Photon(out_parm[tid].Rsp, In_Ptr->layerspecs, &photon);
+        while(num_photons_thread > 0)
+        {
+            for(j = 0; j < 8; j++)
             {
                 int vec_num = j;
-                do  HopDropSpin(In_Ptr, &photon, &out_parm[tid], stream, &result, &count, vec_num);
-                while (!photon.dead[vec_num]);
+                HopDrop(In_Ptr, &photon, &out_parm[tid], stream, &result, &count, vec_num, &num_photons_thread); 
+            }
+            Spin8AndRoul(In_Ptr, &photon, stream, &result, &count);
+            // May launch new photons
+            for(j = 0; j < 8; j++)
+            {
+                int vec_num = j;
+                if(photon.dead[vec_num] == 1)
+                {
+                    LaunchPhoton(out_parm[tid].Rsp, In_Ptr->layerspecs, &photon, vec_num);
+                    //printf("prev:%d ",num_photons_thread);
+                    num_photons_thread--;
+                    //printf("after:%d \n",num_photons_thread);
+                }    
             }
         }
-	vslDeleteStream( &stream );
+            //may add photon
+	    vslDeleteStream( &stream );
     }
 
     // time 2
