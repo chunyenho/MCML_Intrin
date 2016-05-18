@@ -366,6 +366,31 @@ void StepSizeInGlass(Photon8Struct *  Photon_Ptr,
     Photon_Ptr->s[vec_num] = dl_b;
 }
 
+void StepSizeInGlass8(Photon8Struct *  Photon_Ptr,
+                     InputStruct  *  In_Ptr)
+{
+    double dl_b[8];	/* step size to boundary. */
+    short  layer[8]; //= Photon_Ptr->layer[vec_num];
+    double uz[8]; //= Photon_Ptr->uz[vec_num];
+    int i;
+    for (i = 0; i < 8; i++)
+    {
+        layer[i] = Photon_Ptr->layer[i];
+        uz[i] = Photon_Ptr->uz[i];
+        /* Stepsize to the boundary. */
+        if(uz[i]>0.0)
+            dl_b[i] = (In_Ptr->layerspecs[layer].z1 - Photon_Ptr->z[i])
+                    /uz[i];
+        else if(uz[i]<0.0)
+            dl_b[i] = (In_Ptr->layerspecs[layer].z0 - Photon_Ptr->z[i])
+                    /uz[i];
+        else
+            dl_b[i] = 0.0;
+
+        Photon_Ptr->s[[i]] = dl_b[i];
+    }
+}
+
 /***********************************************************
  *	Pick a step size for a photon packet when it is in
  *	tissue.
@@ -397,6 +422,33 @@ void StepSizeInTissue(Photon8Struct * Photon_Ptr,
     } else {	/* take the leftover. */
         Photon_Ptr->s[vec_num] = Photon_Ptr->sleft[vec_num]/(mua+mus);
         Photon_Ptr->sleft[vec_num] = 0.0;
+    }
+}
+
+void StepSizeInTissue8(Photon8Struct * Photon_Ptr,
+                      InputStruct  * In_Ptr,
+			VSLStreamStatePtr  stream, double * result, short * count)
+{
+    short  layer[8]; //= Photon_Ptr->layer[vec_num];
+    double mua[8]; //= In_Ptr->layerspecs[layer].mua;
+    double mus[8]; //= In_Ptr->layerspecs[layer].mus;
+    double rnd[8];
+    double result_t[8];
+    vdRngUniform( VSL_RNG_METHOD_UNIFORM_STD, stream, 1024, result_t, 0.0, 1.0 );
+
+    for (i = 0 ; i < 8 ; i++)
+    {
+        layer[i] = Photon_Ptr->layer[i];
+        mua[i] = In_Ptr->layerspecs[layer].mua;
+        mus[i] = In_Ptr->layerspecs[layer].mus;
+        
+        if(Photon_Ptr->sleft[i] == 0.0) {  /* make a new step. */
+		    rnd[i] = result_t[i];
+            Photon_Ptr->s[i] = -log(rnd[i])/(mua[i]+mus[i]);
+        } else {	/* take the leftover. */
+            Photon_Ptr->s[i] = Photon_Ptr->sleft[i]/(mua[i]+mus[i]);
+            Photon_Ptr->sleft[i] = 0.0;
+        }
     }
 }
 

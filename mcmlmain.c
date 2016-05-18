@@ -38,7 +38,7 @@ void InitOutputData(InputStruct, OutStruct *);
 void FreeData(InputStruct, OutStruct *);
 double Rspecular(LayerStruct * );
 void Launch8Photon(double, LayerStruct *, Photon8Struct *);
-void HopDropSpin(InputStruct  *,Photon8Struct *,OutStruct *, VSLStreamStatePtr *, double *,short *, int);
+void Step(InputStruct  *,Photon8Struct *,OutStruct *, VSLStreamStatePtr *, double *,short *, int, int *);
 void SumScaleResult(InputStruct, OutStruct *);
 void WriteResult(InputStruct, OutStruct, char *);
 void CollectResult(InputStruct , OutStruct *, OutStruct *);
@@ -206,7 +206,7 @@ void DoOneRun(short NumRuns, InputStruct *In_Ptr, int num_threads)
             for(j = 0; j < 8; j++)
             {
                 int vec_num = j;
-                HopDrop(In_Ptr, &photon, &out_parm[tid], stream, &result, &count, vec_num, &num_photons_thread); 
+                Step(In_Ptr, &photon, &out_parm[tid], stream, &result, &count, vec_num, &num_photons_thread); 
             }
             Hop8(&photon);
             Drop8(In_Ptr, &photon, &out_parm[tid]);
