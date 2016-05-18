@@ -208,6 +208,8 @@ void DoOneRun(short NumRuns, InputStruct *In_Ptr, int num_threads)
                 int vec_num = j;
                 HopDrop(In_Ptr, &photon, &out_parm[tid], stream, &result, &count, vec_num, &num_photons_thread); 
             }
+            Hop8(&photon);
+            Drop8(In_Ptr, &photon, &out_parm[tid]);
             Spin8AndRoul(In_Ptr, &photon, stream, &result, &count, result_t);
             // May launch new photons
             for(j = 0; j < 8; j++)

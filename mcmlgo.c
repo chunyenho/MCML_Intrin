@@ -322,6 +322,20 @@ void Hop(Photon8Struct *	Photon_Ptr, int vec_num)
     Photon_Ptr->z[vec_num] += s*Photon_Ptr->uz[vec_num];
 }
 
+void Hop8(Photon8Struct *	Photon_Ptr)
+{
+    int i;
+    double s[8] ;//= Photon_Ptr->s[vec_num];
+    #pragma simd
+    for (i = 0; i< 8; i++)
+    {
+        s[i] = Photon_Ptr->s[i];
+        Photon_Ptr->x[i] += s[i]*Photon_Ptr->ux[i];
+        Photon_Ptr->y[i] += s[i]*Photon_Ptr->uy[i];
+        Photon_Ptr->z[i] += s[i]*Photon_Ptr->uz[i];
+    }
+}
+
 /***********************************************************
  *	If uz != 0, return the photon step size in glass,
  *	Otherwise, return 0.
@@ -460,6 +474,42 @@ void Drop(InputStruct  *	In_Ptr,
 
     /* assign dwa to the absorption array element. */
     Out_Ptr->A_rz[ir][iz]	+= dwa;
+}
+
+void Drop8(InputStruct  *	In_Ptr,
+          Photon8Struct *	Photon_Ptr,
+          OutStruct *		Out_Ptr)
+{
+    int i;
+    double dwa[8];		/* absorbed weight.*/
+    double x[8] ;//= Photon_Ptr->x[vec_num];
+    double y[8] ;//= Photon_Ptr->y[vec_num];
+    short  iz[8], ir[8];	/* index to z & r. */
+    short  layer[8] ;//= Photon_Ptr->layer[vec_num];
+    double mua[8], mus[8];
+    #pragma simd
+    for (i=0; i<8; i++)
+    {
+        x[i] = Photon_Ptr->x[i];
+        y[i] = Photon_Ptr->y[i];
+        layer[i] = Photon_Ptr->layer[i];
+    /* compute array indices. */
+    iz[i] = (short)(Photon_Ptr->z[i]/In_Ptr->dz);
+    if(iz[i]>In_Ptr->nz-1) iz[i]=In_Ptr->nz-1;
+
+    ir[i] = (short)(sqrt(x[i]*x[i]+y[i]*y[i])/In_Ptr->dr);
+    if(ir[i]>In_Ptr->nr-1) ir[i]=In_Ptr->nr-1;
+
+    /* update photon weight. */
+    mua[i] = In_Ptr->layerspecs[layer[i]].mua;
+    mus[i] = In_Ptr->layerspecs[layer[i]].mus;
+    dwa[i] = Photon_Ptr->w[i] * mua[i]/(mua[i]+mus[i]);
+    Photon_Ptr->w[i] -= dwa[i];
+    }
+
+    /* assign dwa to the absorption array element. */
+    for (i = 0 ; i < 8; i++)
+        Out_Ptr->A_rz[ir[i]][iz[i]]	+= dwa[i];
 }
 
 /***********************************************************
@@ -808,13 +858,13 @@ void HopDropInTissue(InputStruct  *  In_Ptr,
              LaunchPhoton(Out_Ptr->Rsp, In_Ptr->layerspecs, Photon_Ptr, vec_num);
              HopDrop(In_Ptr, Photon_Ptr, Out_Ptr, stream, result, count, vec_num, num_photons);
          }  
-    } else {
-        Hop(Photon_Ptr,vec_num);
-        Drop(In_Ptr, Photon_Ptr, Out_Ptr, vec_num);
+    } //else {
+//        Hop(Photon_Ptr,vec_num);
+//        Drop(In_Ptr, Photon_Ptr, Out_Ptr, vec_num);
         // Ready to spin
 //        Spin(In_Ptr->layerspecs[Photon_Ptr->layer[vec_num]].g,
 //             Photon_Ptr, stream, result, count, vec_num);
-    }
+//    }
 }
 
 /***********************************************************
