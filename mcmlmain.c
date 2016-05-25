@@ -38,7 +38,7 @@ void InitOutputData(InputStruct, OutStruct *);
 void FreeData(InputStruct, OutStruct *);
 double Rspecular(LayerStruct * );
 void Launch8Photon(double, LayerStruct *, Photon8Struct *);
-void Step(InputStruct  *,Photon8Struct *,OutStruct *, VSLStreamStatePtr *, double *,short *, int, int *);
+void HopDropSpin(InputStruct  *,Photon8Struct *,OutStruct *, VSLStreamStatePtr *);
 void SumScaleResult(InputStruct, OutStruct *);
 void WriteResult(InputStruct, OutStruct, char *);
 void CollectResult(InputStruct , OutStruct *, OutStruct *);
@@ -193,6 +193,7 @@ void DoOneRun(short NumRuns, InputStruct *In_Ptr, int num_threads)
     {
         int tid = omp_get_thread_num(), j;
 	    VSLStreamStatePtr stream;
+        Launch8Photon(out_parm[tid].Rsp, In_Ptr->layerspecs, &photon);
     	double result[1024];
     	short count = 0;
         long num_photons_thread = num_photons/omp_get_num_threads();
@@ -200,17 +201,9 @@ void DoOneRun(short NumRuns, InputStruct *In_Ptr, int num_threads)
         result_t = (double *)malloc(sizeof(double)*16);
 //    	vslNewStream( &stream, VSL_BRNG_MT19937, rand_seed[tid] );
         vslNewStream( &stream, VSL_BRNG_MT19937, 777 );
-        Launch8Photon(out_parm[tid].Rsp, In_Ptr->layerspecs, &photon);
         while(num_photons_thread > 0)
         {
-            for(j = 0; j < 8; j++)
-            {
-                int vec_num = j;
-                Step(In_Ptr, &photon, &out_parm[tid], stream, &result, &count, vec_num, &num_photons_thread); 
-            }
-            Hop8(&photon);
-            Drop8(In_Ptr, &photon, &out_parm[tid]);
-            Spin8AndRoul(In_Ptr, &photon, stream, &result, &count, result_t);
+            HopDropSpin(In_Ptr, &photon, &out_parm[tid], stream); 
             // May launch new photons
             for(j = 0; j < 8; j++)
             {
@@ -218,13 +211,11 @@ void DoOneRun(short NumRuns, InputStruct *In_Ptr, int num_threads)
                 if(photon.dead[vec_num] == 1)
                 {
                     LaunchPhoton(out_parm[tid].Rsp, In_Ptr->layerspecs, &photon, vec_num);
-                    //printf("prev:%d ",num_photons_thread);
                     num_photons_thread--;
-                    //printf("after:%d \n",num_photons_thread);
+                    //printf("%ddead !!  \n",num_photons/omp_get_num_threads() - num_photons_thread);
                 }    
             }
         }
-            //may add photon
 	    vslDeleteStream( &stream );
     }
 
